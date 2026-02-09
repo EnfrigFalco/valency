@@ -3,7 +3,7 @@
 # Interplay:
 #     Texture Management: Loads your `icons/` folder into `gpu.types.GPUTexture`.
 #     Projection: Uses `location_3d_to_region_2d` to calculate where on the screen the icons sit.
-#     Shader Binding: Uses the `IMAGE_COLOR` builtin shader to push the icons via the `POST_PIXEL` callback.
+#     Shader Binding: Uses the `IMAGE_COLOR` builtin shader via the `POST_VIEW` callback with depth testing.
 #     Dependency: Relies on the coordinate list provided by `operators.py`.
 
 import bpy
