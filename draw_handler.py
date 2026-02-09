@@ -25,6 +25,7 @@ _textures = {}
 _ICON_SIZE = 24  # pixels
 _DEPTH_BIAS_MIN = 0.1
 _DEPTH_BIAS_FACTOR = 1e-4
+_USE_RETOPOLOGY_OFFSET_CULLING = False
 
 # Icon lookup table
 _icon_mapping = {
@@ -57,14 +58,16 @@ def build_pole_data(context):
     if active_object is None or active_object.type != "MESH":
         return {2: [], 3: [], 4: [], 5: [], "6+": []}
 
-    # Initialize pole data dictionary
-    pole_data = {2: [], 3: [], 4: [], 5: [], "6+": []}
-
     # Access live edit-mode geometry
     bm = bmesh.from_edit_mesh(active_object.data)
     bm.verts.ensure_lookup_table()
 
-    matrix = active_object.matrix_world
+    return _build_pole_data_from_bm(bm, active_object.matrix_world)
+
+
+def _build_pole_data_from_bm(bm, matrix):
+    """Build pole data from a bmesh and transform matrix."""
+    pole_data = {2: [], 3: [], 4: [], 5: [], "6+": []}
 
     for vert in bm.verts:
         valence = len(vert.link_edges)
@@ -149,6 +152,9 @@ def _build_retopology_kdtree(context, obj, mesh):
 
 def _is_within_retopology_offset(pole_co, context, kd_tree):
     """Check if pole is within retopology offset distance from mesh surface."""
+    if not _USE_RETOPOLOGY_OFFSET_CULLING:
+        return True
+
     overlay = context.space_data.overlay
     if not overlay.show_retopology:
         return True
@@ -227,6 +233,7 @@ def _load_textures():
 
 def _draw_callback(*args):
     """Draw overlay icons for all poles in the current view."""
+    global _pole_data
     if _pole_data is None or _context is None:
         return
 
@@ -244,6 +251,12 @@ def _draw_callback(*args):
     try:
         bm_cache = bmesh.from_edit_mesh(mesh)
         bm_cache.verts.ensure_lookup_table()
+    except Exception:
+        return
+
+    # Refresh pole data from live bmesh to keep icons responsive while editing
+    try:
+        _pole_data = _build_pole_data_from_bm(bm_cache, obj.matrix_world)
     except Exception:
         return
 
