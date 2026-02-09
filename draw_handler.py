@@ -25,7 +25,6 @@ _textures = {}
 _ICON_SIZE = 24  # pixels
 _DEPTH_BIAS_MIN = 0.1
 _DEPTH_BIAS_FACTOR = 1e-4
-_USE_RETOPOLOGY_OFFSET_CULLING = False
 
 # Icon lookup table
 _icon_mapping = {
@@ -135,26 +134,29 @@ def _get_depth_bias(pole_co, cam_pos):
     return max(_DEPTH_BIAS_MIN, distance * _DEPTH_BIAS_FACTOR)
 
 
-def _build_retopology_kdtree(context, obj, mesh):
+def _build_retopology_kdtree(context, obj, mesh, bm_cache=None):
     """Build a KD-tree of mesh vertices in world space for retopology culling."""
     overlay = context.space_data.overlay
     if not overlay.show_retopology:
         return None
 
     matrix = obj.matrix_world
-    kd = kdtree.KDTree(len(mesh.vertices))
-    for i, vert in enumerate(mesh.vertices):
-        world_co = matrix @ vert.co
-        kd.insert(world_co, i)
+    if bm_cache is not None:
+        kd = kdtree.KDTree(len(bm_cache.verts))
+        for i, vert in enumerate(bm_cache.verts):
+            world_co = matrix @ vert.co
+            kd.insert(world_co, i)
+    else:
+        kd = kdtree.KDTree(len(mesh.vertices))
+        for i, vert in enumerate(mesh.vertices):
+            world_co = matrix @ vert.co
+            kd.insert(world_co, i)
     kd.balance()
     return kd
 
 
 def _is_within_retopology_offset(pole_co, context, kd_tree):
     """Check if pole is within retopology offset distance from mesh surface."""
-    if not _USE_RETOPOLOGY_OFFSET_CULLING:
-        return True
-
     overlay = context.space_data.overlay
     if not overlay.show_retopology:
         return True
@@ -268,7 +270,7 @@ def _draw_callback(*args):
     cam_pos = region_3d.view_matrix.inverted().translation
 
     # Optional retopology culling KD-tree (Solid mode retopology overlay)
-    kd_tree = _build_retopology_kdtree(_context, obj, mesh)
+    kd_tree = _build_retopology_kdtree(_context, obj, mesh, bm_cache=bm_cache)
 
     gpu.state.blend_set("ADDITIVE")
     gpu.state.depth_test_set("LESS_EQUAL")
