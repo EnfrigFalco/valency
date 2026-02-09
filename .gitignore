@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+
+# Large dependencies (already have locally)
+fake_bpy_modules_4.3-20250130/
+
+# IDE
+.vscode/
+
+# Blender
+*.blend1
+*.blend2
+*.bak
+*.tmp
+
+# Project-specific
+references/
+snippets/
+blender_python_reference_5_0/
+method.md
+snippets.md
+vs_notes.md

@@ -1,0 +1,11 @@
+schema_version = "1.0.0"
+id = "valency"
+version = "0.1.0"
+name = "Valency"
+tagline = "Toolbar toggle for pole visualization"
+maintainer = "Enfrig Falco"
+type = "add-on"
+tags = ["3D View", "Modeling", "Mesh"]
+blender_version_min = "4.2.0"
+license = ["CC0"]
+copyright = ["2026 Enfrig Falco",]
