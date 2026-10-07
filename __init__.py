@@ -1,151 +1,99 @@
 # The Orchestrator
 # Role: Handles registration and unregistration.
 # Interplay: Imports `operators.py`, `ui.py`, and `draw_handler.py`.
-# Note: It should not load icons or start the draw handler here. It simply makes the commands available to Blender’s interface.
+# Note: The draw handler is registered once and stays registered; it returns immediately unless the
+#       overlay is enabled and a mesh is in Edit Mode. That keeps it in sync across mode changes,
+#       file loads and multiple 3D Views without any extra bookkeeping.
 
 import bpy
-from bpy.props import BoolProperty
+from bpy.app.handlers import persistent
+from bpy.props import BoolProperty, IntProperty, PointerProperty
 from . import operators, ui, draw_handler
 
-bl_info = {
-    "name": "Valency",
-    "author": "Enfrig Falco",
-    "version": (0, 1, 0),
-    "blender": (4, 2, 0),
-    "location": "View3D > Toolbar",
-    "description": "Topological valence and pole visualization for mesh editing",
-    "category": "3D View",
-}
 
-_in_callback = False
-_last_mode = None
-_last_mesh_update = 0
+def _redraw_3d_views(context=None):
+    wm = (context or bpy.context).window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type == "VIEW_3D":
+                area.tag_redraw()
 
 
-def _on_mesh_change(scene):
-    """Handler to detect mesh changes and update pole visualization in real-time."""
-    global _last_mesh_update
-    
-    try:
-        # Only update if visualization is enabled and we're in Edit Mode
-        if not scene.valency_visualization_enabled or bpy.context.mode != "EDIT_MESH":
+def _on_setting_changed(self, context):
+    draw_handler.mark_dirty()
+    _redraw_3d_views(context)
+
+
+class ValencySettings(bpy.types.PropertyGroup):
+    enabled: BoolProperty(
+        name="Show Poles",
+        description="Show an icon on every vertex according to its valence (number of connected edges)",
+        default=False,
+        update=_on_setting_changed,
+    )
+    icon_size: IntProperty(
+        name="Icon Size",
+        description="Icon size in pixels (scaled by the interface Resolution Scale)",
+        default=24, min=4, max=128,
+        update=_on_setting_changed,
+    )
+    cull_backfaces: BoolProperty(
+        name="Hide Backfacing",
+        description="Hide icons on vertices facing away from the view (ignored in X-Ray)",
+        default=True,
+        update=_on_setting_changed,
+    )
+    show_regular: BoolProperty(
+        name="Show Valence 4",
+        description="Also show icons on regular (4-edge) vertices",
+        default=True,
+        update=_on_setting_changed,
+    )
+
+
+@persistent
+def _on_depsgraph_update(scene, depsgraph):
+    # Edit-mode changes (moving, adding, deleting vertices) arrive here as geometry updates.
+    for update in depsgraph.updates:
+        if update.is_updated_geometry and isinstance(update.id, (bpy.types.Object, bpy.types.Mesh)):
+            draw_handler.mark_dirty()
             return
-        
-        # Throttle updates to avoid excessive recomputation
-        import time
-        current_time = time.time()
-        if current_time - _last_mesh_update < 0.1:  # Update max once per 100ms
-            return
-        
-        _last_mesh_update = current_time
-        
-        # Re-analyze the mesh and update pole data
-        if draw_handler.is_registered():
-            pole_data = draw_handler.build_pole_data(bpy.context)
-            draw_handler.update_pole_data(pole_data)
-    except:
-        pass
 
 
-def _on_visualization_toggle(self, context):
-    """Callback when visualization checkbox is toggled."""
-    global _in_callback
-    
-    # Prevent recursive callbacks
-    if _in_callback:
-        return
-    
-    _in_callback = True
-    try:
-        is_enabled = context.scene.valency_visualization_enabled
-        
-        # Only allow in Edit Mode
-        if context.mode != "EDIT_MESH":
-            # Reset if trying to enable outside Edit Mode
-            if is_enabled:
-                _in_callback = True
-                try:
-                    context.scene.valency_visualization_enabled = False
-                finally:
-                    _in_callback = False
-            return
-        
-        if is_enabled:
-            # Enable visualization
-            if not draw_handler.is_registered():
-                pole_data = draw_handler.build_pole_data(context)
-                draw_handler.register(pole_data, context)
-        else:
-            # Disable visualization
-            if draw_handler.is_registered():
-                draw_handler.unregister()
-    except Exception as e:
-        print(f"Error toggling visualization: {e}")
-    finally:
-        _in_callback = False
+@persistent
+def _on_undo_redo(scene, *args):
+    draw_handler.mark_dirty()
 
 
-def _on_mode_change(scene):
-    """Scene update handler to detect mode changes and manage draw handler."""
-    global _last_mode, _in_callback
-    
-    try:
-        current_mode = bpy.context.mode
-        
-        # Exiting Edit Mode - unregister but keep checkbox state
-        if _last_mode == "EDIT_MESH" and current_mode != "EDIT_MESH":
-            if draw_handler.is_registered():
-                draw_handler.unregister()
-        
-        # Entering Edit Mode - re-register if checkbox is enabled
-        elif _last_mode != "EDIT_MESH" and current_mode == "EDIT_MESH":
-            if scene.valency_visualization_enabled and not draw_handler.is_registered():
-                pole_data = draw_handler.build_pole_data(bpy.context)
-                draw_handler.register(pole_data, bpy.context)
-        
-        _last_mode = current_mode
-    except:
-        pass
+_handler_lists = (
+    (bpy.app.handlers.depsgraph_update_post, _on_depsgraph_update),
+    (bpy.app.handlers.undo_post, _on_undo_redo),
+    (bpy.app.handlers.redo_post, _on_undo_redo),
+    (bpy.app.handlers.load_post, _on_undo_redo),
+)
 
 
 def register():
-    """Register the addon by registering classes and UI."""
-    
-    # Register custom property on Scene with update callback
-    bpy.types.Scene.valency_visualization_enabled = BoolProperty(
-        name="Pole Visualization Enabled",
-        description="Toggle vertex pole visualization overlay",
-        default=False,
-        update=_on_visualization_toggle
-    )
-    
+    bpy.utils.register_class(ValencySettings)
+    bpy.types.Scene.valency = PointerProperty(type=ValencySettings)
     operators.register()
     ui.register()
-    
-    # Register mode change handler (keeps overlay in sync with Edit Mode)
-    bpy.app.handlers.depsgraph_update_post.append(_on_mode_change)
-    # Register mesh change handler (rebuilds pole data as topology changes)
-    bpy.app.handlers.depsgraph_update_post.append(_on_mesh_change)
+    for handlers, func in _handler_lists:
+        if func not in handlers:
+            handlers.append(func)
+    draw_handler.register()
+    # bpy.data is restricted during registration; load the icons right after.
+    bpy.app.timers.register(draw_handler.load_icon_pixels, first_interval=0.0)
 
 
 def unregister():
-    """Unregister the addon by unregistering classes and UI."""
-    
+    if bpy.app.timers.is_registered(draw_handler.load_icon_pixels):
+        bpy.app.timers.unregister(draw_handler.load_icon_pixels)
+    draw_handler.unregister()
+    for handlers, func in _handler_lists:
+        if func in handlers:
+            handlers.remove(func)
     ui.unregister()
     operators.unregister()
-    
-    # Unregister mode change handler
-    if _on_mode_change in bpy.app.handlers.depsgraph_update_post:
-        bpy.app.handlers.depsgraph_update_post.remove(_on_mode_change)
-    
-    # Unregister mesh change handler
-    if _on_mesh_change in bpy.app.handlers.depsgraph_update_post:
-        bpy.app.handlers.depsgraph_update_post.remove(_on_mesh_change)
-    
-    # Clean up draw handler
-    if draw_handler.is_registered():
-        draw_handler.unregister()
-    
-    # Unregister custom property
-    if hasattr(bpy.types.Scene, "valency_visualization_enabled"):
-        del bpy.types.Scene.valency_visualization_enabled
+    del bpy.types.Scene.valency
+    bpy.utils.unregister_class(ValencySettings)
