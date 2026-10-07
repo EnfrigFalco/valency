@@ -1,8 +1,9 @@
 # Python
 __pycache__/
+*.pyc
 
-# Large dependencies (already have locally)
-fake_bpy_modules_4.3-20250130/
+# Build output
+*.zip
 
 # IDE
 .vscode/
@@ -13,10 +14,9 @@ fake_bpy_modules_4.3-20250130/
 *.bak
 *.tmp
 
-# Project-specific
+# Local development notes
 references/
 snippets/
-blender_python_reference_5_0/
 method.md
 snippets.md
 vs_notes.md
